@@ -20,55 +20,51 @@ def _landmarks(df: pd.DataFrame) -> pd.DataFrame:
 
 class StrategyEngine:
     def compute(self, df: pd.DataFrame, symbol: str, horizon: Horizon) -> SignalModel:
-        if df is None or df.empty:
-            raise ValueError("Empty dataframe in StrategyEngine.compute")
+        if df.empty:
+            raise ValueError("no data")
+
+        # 1) Предрасчёты/фичи (оставь только то, что нужно твоей стратегии)
         df = df.copy()
-        df["ATR14"] = _atr(df, 14)
-        df = pd.concat([df, _landmarks(df)], axis=1)
-        latest = df.iloc[-1]
+        # пример: твои фичи/паттерны
+        # df["my_feature"] = ...
 
-        px = float(latest["Close"])
-        a  = float(latest["ATR14"] or 0.0)
-        KM = float(latest["key_mark"] or px)
-        UZ = float(latest["upper_zone"] or px)
-        LZ = float(latest["lower_zone"] or px)
+        # 2) Твоя логика определения направления и уверенности
+        # --- ВСТАВЬ СВОИ ПРАВИЛА ---
+        action = "BUY"      # "SHORT" | "WAIT"
+        confidence = 0.68   # 0..1
 
-        if horizon == "short":
-            scale = 2.0; tp_mult1, tp_mult2, sl_mult = 0.5, 1.0, 0.8
-        elif horizon == "position":
-            scale = 3.5; tp_mult1, tp_mult2, sl_mult = 0.8, 1.8, 1.2
-        else:
-            scale = 2.8; tp_mult1, tp_mult2, sl_mult = 0.6, 1.4, 1.0
+        # 3) Уровни риска/таргеты (по твоим правилам)
+        price = float(df["Close"].iloc[-1])
+        # примеры; замени своей формулой
+        entry = price
+        tp1   = price + 2.0
+        tp2   = price + 5.0
+        sl    = price - 1.5
 
-        score = 0.5 if a <= 0 else max(0.0, min(1.0, 0.5 + (px - KM) / (scale * a)))
-        action: Literal["BUY","SHORT","WAIT"]
-        action = "BUY" if score >= 0.6 else ("SHORT" if score <= 0.4 else "WAIT")
+        # 4) Ключевая отметка/зоны (используй любые твои ориентиры)
+        key_mark   = price - 0.5
+        upper_zone = price + 3.0
+        lower_zone = price - 2.5
 
-        if action == "BUY":
-            entry = px
-            tp1 = max(px + tp_mult1*a, UZ)
-            tp2 = max(px + tp_mult2*a, KM + (UZ - KM)*1.5)
-            sl  = px - sl_mult*a
-        elif action == "SHORT":
-            entry = px
-            tp1 = min(px - tp_mult1*a, LZ)
-            tp2 = min(px - tp_mult2*a, KM - (KM - LZ)*1.5)
-            sl  = px + sl_mult*a
-        else:
-            entry = px
-            tp1 = px + (tp_mult1+0.2)*a
-            tp2 = px + (tp_mult2+0.4)*a
-            sl  = px - (sl_mult-0.2)*a
-
-        note = self._note(symbol, horizon, score, a, KM, UZ, LZ, entry, tp1, tp2, sl)
-
-        return SignalModel(
-            symbol=symbol, horizon=horizon, action=action, confidence=float(round(score,2)),
-            entry=round(entry,2), tp1=round(tp1,2), tp2=round(tp2,2), sl=round(sl,2),
-            key_mark=round(KM,2), upper_zone=round(UZ,2), lower_zone=round(LZ,2),
-            rationale=note
+        # 5) Текст для UI (без раскрытия внутренней математики)
+        rationale = (
+            f"Сценарий на {'покупку' if action=='BUY' else ('шорт' if action=='SHORT' else 'ожидание')}. "
+            f"План: вход {entry:.2f} • стоп {sl:.2f} • цели {tp1:.2f}/{tp2:.2f}. "
+            f"Слежение за диапазоном {lower_zone:.2f}–{upper_zone:.2f}."
         )
 
+        # 6) Валидация монотонности уровней (полезно для тестов)
+        if action == "BUY":
+            assert tp2 >= tp1 >= entry >= sl
+        elif action == "SHORT":
+            assert tp2 <= tp1 <= entry <= sl
+
+        return SignalModel(
+            symbol=symbol, horizon=horizon, action=action, confidence=float(round(confidence,2)),
+            entry=round(entry,2), tp1=round(tp1,2), tp2=round(tp2,2), sl=round(sl,2),
+            key_mark=round(key_mark,2), upper_zone=round(upper_zone,2), lower_zone=round(lower_zone,2),
+            rationale=rationale
+        )
     def _note(self, symbol: str, horizon: Horizon, score: float, atr: float, KM: float, UZ: float, LZ: float,
               entry: float, tp1: float, tp2: float, sl: float) -> str:
         side = "покупку" if score >= 0.6 else ("шорт" if score <= 0.4 else "ожидание")
