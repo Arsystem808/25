@@ -1,3 +1,10 @@
+import sys, pathlib
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))          # корень репозитория
+sys.path.insert(0, str(BASE_DIR / "core")) # на всякий
+sys.path.insert(0, str(BASE_DIR / "config"))
+
+
 import os, sys, pathlib
 import streamlit as st
 import plotly.graph_objects as go
